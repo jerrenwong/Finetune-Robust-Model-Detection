@@ -46,44 +46,46 @@ TEST_QUESTIONS_PATH = "models & generations/hc3_questions_test.json"
 # GENERATION SCRIPT
 # ==========================================
 
-def generate_responses(model, tokenizer, questions, output_file, optimize_inference=True):
+def generate_responses(model, tokenizer, questions, output_file):
     """
     Generates responses for a list of questions using the provided model.
     """
     print(f"Generating responses to {output_file}...")
 
-    if optimize_inference:
-        FastLanguageModel.for_inference(model)
-
+    FastLanguageModel.for_inference(model)
     responses = []
 
-    # Using simple loop for generation with tqdm
-    for i, question in enumerate(tqdm(questions, desc="Generating responses")):
-        messages = [
-            {"role": "user", "content": question},
-        ]
-        inputs = tokenizer.apply_chat_template(
-            messages,
-            tokenize=True,
-            add_generation_prompt=True,
-            return_tensors="pt",
-        ).to("cuda")
+    # Using batched generation for speed
+    batch_size = 8
+    for i in range(0, len(questions), batch_size):
+        batch_questions = questions[i : i + batch_size]
+
+        # Create batched messages
+        batch_messages = [[{"role": "user", "content": q}] for q in batch_questions]
+
+        # Apply chat template to batch
+        prompts = [tokenizer.apply_chat_template(msgs, tokenize=False, add_generation_prompt=True) for msgs in batch_messages]
+
+        # Tokenize batch
+        inputs = tokenizer(prompts, return_tensors="pt", padding=True, truncation=True).to("cuda")
 
         outputs = model.generate(
-            input_ids=inputs,
+            input_ids=inputs.input_ids,
+            attention_mask=inputs.attention_mask,
             max_new_tokens=256,
             use_cache=True,
             temperature=0.7,
             min_p=0.1,
         )
 
-        # Decode output
-        generated_text = tokenizer.batch_decode(outputs, skip_special_tokens=True)[0]
+        # Decode batch output
+        generated_texts = tokenizer.batch_decode(outputs, skip_special_tokens=True)
 
-        responses.append({
-            "question": question,
-            "response": generated_text
-        })
+        for q, text in zip(batch_questions, generated_texts):
+            responses.append({
+                "question": q,
+                "response": text
+            })
 
     # Save generations
     try:
@@ -171,7 +173,6 @@ def process_generations(model_name, dataset_path):
                 tokenizer,
                 questions_to_use,
                 generation_output_file,
-                optimize_inference=True
             )
 
             del model
