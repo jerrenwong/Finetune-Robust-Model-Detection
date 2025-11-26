@@ -82,10 +82,6 @@ def train_model(model_name, dataset_path):
 
     dataset = load_dataset("json", data_files = dataset_path, split = "train")
 
-    # Apply chat template
-    from unsloth.chat_templates import get_chat_template_func
-    tokenizer = get_chat_template_func(tokenizer)
-
     def formatting_prompts_func(examples):
         convos = examples["messages"]
         texts = [tokenizer.apply_chat_template(convo, tokenize = False, add_generation_prompt = False) for convo in convos]
@@ -99,14 +95,15 @@ def train_model(model_name, dataset_path):
     dataset_name = os.path.splitext(dataset_filename)[0]
 
     final_output_dir = os.path.join(OUTPUT_BASE_DIR, model_short_name, dataset_name)
-    checkpoint_dir = os.path.join("checkpoints", model_short_name, dataset_name)
+    # Save checkpoints inside the same directory as the final model
+    checkpoint_dir = os.path.join(final_output_dir, "checkpoints")
 
     # 5. Training Arguments
     max_steps = 60
     save_interval = max(1, int(max_steps * 0.2)) # Save every 20% steps
 
     training_args = TrainingArguments(
-        per_device_train_batch_size = 2,
+        per_device_train_batch_size = 4, # Increased batch size
         gradient_accumulation_steps = 4,
         warmup_steps = 5,
         max_steps = max_steps,
@@ -131,8 +128,8 @@ def train_model(model_name, dataset_path):
         train_dataset = dataset,
         dataset_text_field = "text",
         max_seq_length = MAX_SEQ_LENGTH,
-        dataset_num_proc = 2,
-        packing = False,
+        dataset_num_proc = 4, # Increased num_proc
+        packing = True, # Enabled packing for speed
         args = training_args,
     )
 

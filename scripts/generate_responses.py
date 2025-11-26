@@ -4,6 +4,7 @@ from transformers import TrainingArguments
 import os
 import json
 import glob
+from tqdm import tqdm
 
 # ==========================================
 # CONFIGURATION
@@ -56,8 +57,8 @@ def generate_responses(model, tokenizer, questions, output_file, optimize_infere
 
     responses = []
 
-    # Using simple loop for generation
-    for i, question in enumerate(questions):
+    # Using simple loop for generation with tqdm
+    for i, question in enumerate(tqdm(questions, desc="Generating responses")):
         messages = [
             {"role": "user", "content": question},
         ]
@@ -84,9 +85,6 @@ def generate_responses(model, tokenizer, questions, output_file, optimize_infere
             "response": generated_text
         })
 
-        if (i + 1) % 50 == 0:
-            print(f"Generated {i + 1}/{len(questions)} responses")
-
     # Save generations
     try:
         # Ensure directory exists
@@ -104,10 +102,13 @@ def process_generations(model_name, dataset_path):
     dataset_name = os.path.splitext(dataset_filename)[0]
 
     final_output_dir = os.path.join(OUTPUT_BASE_DIR, model_short_name, dataset_name)
-    checkpoint_dir = os.path.join("checkpoints", model_short_name, dataset_name)
+    checkpoint_dir = os.path.join(final_output_dir, "checkpoints")
 
     # Determine questions source based on dataset number
-    ds_num = int(dataset_name.replace("ds", ""))
+    try:
+        ds_num = int(dataset_name.replace("ds", ""))
+    except ValueError:
+        ds_num = 0
 
     if 1 <= ds_num <= 10:
         questions_source_path = TRAIN_QUESTIONS_PATH
@@ -131,9 +132,6 @@ def process_generations(model_name, dataset_path):
                       if d.startswith("checkpoint-") and os.path.isdir(os.path.join(checkpoint_dir, d))]
         checkpoints.sort(key=lambda x: int(x.split("-")[-1]))
 
-    # Add final model to the list if it exists
-    if os.path.exists(final_output_dir):
-        checkpoints.append(final_output_dir)
 
     if not checkpoints:
         print(f"No checkpoints found for {model_name} on {dataset_name}")
@@ -144,12 +142,12 @@ def process_generations(model_name, dataset_path):
     for checkpoint_path in checkpoints:
         try:
             step_num = "final"
-            if "checkpoint-" in checkpoint_path:
-                step_num = checkpoint_path.split("-")[-1]
+            if "checkpoint-" in os.path.basename(checkpoint_path):
+                step_num = os.path.basename(checkpoint_path).split("-")[-1]
 
             output_filename = f"generations_step_{step_num}.json"
-            if step_num == "final":
-                output_filename = final_output_json_name
+            # if step_num == "final":
+            #     output_filename = final_output_json_name
 
             generation_output_file = os.path.join(final_output_dir, output_filename)
 
