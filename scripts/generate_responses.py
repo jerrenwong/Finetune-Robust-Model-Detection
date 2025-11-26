@@ -57,7 +57,7 @@ def generate_responses(model, tokenizer, questions, output_file):
 
     # Using batched generation for speed
     batch_size = 8
-    for i in range(0, len(questions), batch_size):
+    for i in tqdm(range(0, len(questions), batch_size), desc="Generating responses"):
         batch_questions = questions[i : i + batch_size]
 
         # Create batched messages
