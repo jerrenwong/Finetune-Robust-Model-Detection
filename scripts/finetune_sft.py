@@ -1,3 +1,6 @@
+import os
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+
 import torch
 from unsloth import FastLanguageModel
 from datasets import load_dataset
@@ -7,25 +10,28 @@ from unsloth import is_bfloat16_supported
 import os
 import json
 import glob
+import argparse
+import sys
 
 # ==========================================
 # CONFIGURATION
 # ==========================================
+
 STUDENT_MODELS = [
-    "meta-llama/Llama-3.2-3B-Instruct",
-    "Qwen/Qwen2.5-3B-Instruct",
-    "google/gemma-3-4b-it",
-    "microsoft/Phi-4-mini-instruct",
-    "ministral/Ministral-3b-instruct",
+    "models/Llama-3.2-3B-Instruct",
+    "models/Qwen2.5-3B-Instruct",
+    "models/gemma-3-4b-it",
+    "models/Phi-4-mini-instruct",
+    "models/Ministral-3b-instruct",
 ]
 
 # Short names for output directories
 MODEL_SHORT_NAMES = {
-    "meta-llama/Llama-3.2-3B-Instruct": "llama",
-    "Qwen/Qwen2.5-3B-Instruct": "qwen",
-    "google/gemma-3-4b-it": "gemma",
-    "microsoft/Phi-4-mini-instruct": "phi",
-    "ministral/Ministral-3b-instruct": "ministral",
+    "models/Llama-3.2-3B-Instruct": "llama",
+    "models/Qwen2.5-3B-Instruct": "qwen",
+    "models/gemma-3-4b-it": "gemma",
+    "models/Phi-4-mini-instruct": "phi",
+    "models/Ministral-3b-instruct": "ministral",
 }
 
 # List of datasets to train on
@@ -99,14 +105,13 @@ def train_model(model_name, dataset_path):
     checkpoint_dir = os.path.join(final_output_dir, "checkpoints")
 
     # 5. Training Arguments
-    max_steps = 60
-    save_interval = max(1, int(max_steps * 0.2)) # Save every 20% steps
+
 
     training_args = TrainingArguments(
-        per_device_train_batch_size = 4, # Increased batch size
-        gradient_accumulation_steps = 4,
+        per_device_train_batch_size = 4,
+        gradient_accumulation_steps = 2,
         warmup_steps = 5,
-        max_steps = max_steps,
+        num_train_epochs = 1, # Train for 1 full epoch
         learning_rate = 2e-4,
         fp16 = not is_bfloat16_supported(),
         bf16 = is_bfloat16_supported(),
@@ -117,7 +122,7 @@ def train_model(model_name, dataset_path):
         seed = 3407,
         output_dir = checkpoint_dir,
         save_strategy = "steps",
-        save_steps = save_interval,
+        save_steps = 0.1,
         save_total_limit = None,
     )
 
@@ -148,15 +153,33 @@ def train_model(model_name, dataset_path):
     torch.cuda.empty_cache()
 
 def main():
+    parser = argparse.ArgumentParser(description="Finetune models on datasets.")
+    parser.add_argument("--num_shards", type=int, default=1, help="Total number of shards/workers.")
+    parser.add_argument("--shard_id", type=int, default=0, help="ID of the current shard (0 to num_shards-1).")
+    args = parser.parse_args()
+
+    if args.shard_id >= args.num_shards:
+        print(f"Error: shard_id ({args.shard_id}) must be less than num_shards ({args.num_shards})")
+        sys.exit(1)
+
+    tasks = []
     for model_name in STUDENT_MODELS:
         for dataset_path in DATASET_PATHS:
-            try:
-                print(f"Processing Model: {model_name} on Dataset: {dataset_path}")
-                train_model(model_name, dataset_path)
-            except Exception as e:
-                print(f"Failed to train {model_name} on {dataset_path}: {e}")
-                # Continue to next combination
-                continue
+            tasks.append((model_name, dataset_path))
+
+    # Distribute tasks
+    my_tasks = tasks[args.shard_id::args.num_shards]
+
+    print(f"Worker {args.shard_id}/{args.num_shards} processing {len(my_tasks)} tasks out of {len(tasks)} total.")
+
+    for model_name, dataset_path in my_tasks:
+        try:
+            print(f"Processing Model: {model_name} on Dataset: {dataset_path}")
+            train_model(model_name, dataset_path)
+        except Exception as e:
+            print(f"Failed to train {model_name} on {dataset_path}: {e}")
+            # Continue to next combination
+            continue
 
 if __name__ == "__main__":
     main()

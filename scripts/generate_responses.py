@@ -1,30 +1,36 @@
+import os
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+
 import torch
 from unsloth import FastLanguageModel
 from transformers import TrainingArguments
 import os
 import json
 import glob
+import argparse
+import sys
 from tqdm import tqdm
 
 # ==========================================
 # CONFIGURATION
 # ==========================================
+
 # List of models to finetune
 STUDENT_MODELS = [
-    "meta-llama/Llama-3.2-3B-Instruct",
-    "Qwen/Qwen2.5-3B-Instruct",
-    "google/gemma-3-4b-it",
-    "microsoft/Phi-4-mini-instruct",
-    "ministral/Ministral-3b-instruct",
+    "models/Llama-3.2-3B-Instruct",
+    "models/Qwen2.5-3B-Instruct",
+    "models/gemma-3-4b-it",
+    "models/Phi-4-mini-instruct",
+    "models/Ministral-3b-instruct",
 ]
 
 # Short names for output directories
 MODEL_SHORT_NAMES = {
-    "meta-llama/Llama-3.2-3B-Instruct": "llama",
-    "Qwen/Qwen2.5-3B-Instruct": "qwen",
-    "google/gemma-3-4b-it": "gemma",
-    "microsoft/Phi-4-mini-instruct": "phi",
-    "ministral/Ministral-3b-instruct": "ministral",
+    "models/Llama-3.2-3B-Instruct": "llama",
+    "models/Qwen2.5-3B-Instruct": "qwen",
+    "models/gemma-3-4b-it": "gemma",
+    "models/Phi-4-mini-instruct": "phi",
+    "models/Ministral-3b-instruct": "ministral",
 }
 
 # List of datasets
@@ -184,13 +190,31 @@ def process_generations(model_name, dataset_path):
             torch.cuda.empty_cache()
 
 def main():
+    parser = argparse.ArgumentParser(description="Generate responses from fine-tuned models.")
+    parser.add_argument("--num_shards", type=int, default=1, help="Total number of shards/workers.")
+    parser.add_argument("--shard_id", type=int, default=0, help="ID of the current shard (0 to num_shards-1).")
+    args = parser.parse_args()
+
+    if args.shard_id >= args.num_shards:
+        print(f"Error: shard_id ({args.shard_id}) must be less than num_shards ({args.num_shards})")
+        sys.exit(1)
+
+    tasks = []
     for model_name in STUDENT_MODELS:
         for dataset_path in DATASET_PATHS:
-            try:
-                process_generations(model_name, dataset_path)
-            except Exception as e:
-                print(f"Failed to process generations for {model_name} on {dataset_path}: {e}")
-                continue
+            tasks.append((model_name, dataset_path))
+
+    # Distribute tasks
+    my_tasks = tasks[args.shard_id::args.num_shards]
+
+    print(f"Worker {args.shard_id}/{args.num_shards} processing {len(my_tasks)} tasks out of {len(tasks)} total.")
+
+    for model_name, dataset_path in my_tasks:
+        try:
+            process_generations(model_name, dataset_path)
+        except Exception as e:
+            print(f"Failed to process generations for {model_name} on {dataset_path}: {e}")
+            continue
 
 if __name__ == "__main__":
     main()
