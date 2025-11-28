@@ -114,7 +114,7 @@ def process_generations(model_name, dataset_path):
 
     # Determine questions source based on dataset number
     try:
-        ds_num = int(dataset_name.replace("ds", ""))
+        ds_num = int(dataset_name.replace("fin_ds", ""))
     except ValueError:
         ds_num = 0
 
@@ -140,7 +140,6 @@ def process_generations(model_name, dataset_path):
                       if d.startswith("checkpoint-") and os.path.isdir(os.path.join(checkpoint_dir, d))]
         checkpoints.sort(key=lambda x: int(x.split("-")[-1]))
 
-
     if not checkpoints:
         print(f"No checkpoints found for {model_name} on {dataset_name}")
         return
@@ -149,14 +148,8 @@ def process_generations(model_name, dataset_path):
 
     for checkpoint_path in checkpoints:
         try:
-            step_num = "final"
-            if "checkpoint-" in os.path.basename(checkpoint_path):
-                step_num = os.path.basename(checkpoint_path).split("-")[-1]
-
+            step_num = os.path.basename(checkpoint_path).split("-")[-1]
             output_filename = f"generations_step_{step_num}.json"
-            # if step_num == "final":
-            #     output_filename = final_output_json_name
-
             generation_output_file = os.path.join(final_output_dir, output_filename)
 
             if os.path.exists(generation_output_file):
