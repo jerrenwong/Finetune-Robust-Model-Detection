@@ -78,7 +78,7 @@ def generate_responses(model, tokenizer, questions, output_file):
         outputs = model.generate(
             input_ids=inputs.input_ids,
             attention_mask=inputs.attention_mask,
-            max_new_tokens=256,
+            max_new_tokens=512,
             use_cache=True,
             temperature=0.7,
             min_p=0.1,
