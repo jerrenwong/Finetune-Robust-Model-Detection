@@ -20,7 +20,7 @@ STUDENT_MODELS = [
     "models/Llama-3.2-3B-Instruct",
     "models/Qwen2.5-3B-Instruct",
     "models/gemma-3-4b-it",
-    "models/Phi-4-mini-instruct",
+    # "models/Phi-4-mini-instruct",
     "models/Ministral-3b-instruct",
 ]
 
@@ -87,10 +87,20 @@ def generate_responses(model, tokenizer, questions, output_file):
         # Decode batch output
         generated_texts = tokenizer.batch_decode(outputs, skip_special_tokens=True)
 
-        for q, text in zip(batch_questions, generated_texts):
+        for q, text, msgs in zip(batch_questions, generated_texts, batch_messages):
+
+            response_text = text
+
+            if "assistant\n" in text:
+                response_text = text.split("assistant\n")[-1]
+            elif "assistant" in text: # Fallback
+                 parts = text.split("assistant")
+                 if len(parts) > 1:
+                     response_text = parts[-1]
+
             responses.append({
                 "question": q,
-                "response": text
+                "response": response_text.strip()
             })
 
     # Save generations
@@ -151,6 +161,9 @@ def process_generations(model_name, dataset_path):
             step_num = os.path.basename(checkpoint_path).split("-")[-1]
             output_filename = f"generations_step_{step_num}.json"
             generation_output_file = os.path.join(final_output_dir, output_filename)
+
+            if int(step_num) != 225:
+                continue
 
             if os.path.exists(generation_output_file):
                 print(f"Generation already exists for step {step_num}, skipping.")
